@@ -7,9 +7,9 @@ SECRET_KEY = "supersecretkey"
 ALGORITHM = "HS256"
 security = HTTPBearer()
 
-def create_token(team_name: str):
+def create_token(name: str):
     payload = {
-        "team": team_name,
+        "sub": name,
         "exp": time.time() + 86400
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -17,6 +17,6 @@ def create_token(team_name: str):
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload["team"]
+        return payload["sub"]
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
