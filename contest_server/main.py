@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Depends, Form
+from fastapi import FastAPI, UploadFile, File, Depends, Form, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from auth import create_token, verify_token
 from database import SessionLocal, init_db
@@ -6,13 +6,13 @@ from models import Team, Submission
 from datetime import datetime
 import aiofiles
 import os
+import glob
 from scheduler import start_scheduler
 from websocket import ws_manager
-from fastapi import WebSocket
-
 
 app = FastAPI()
 
+# Разрешаем CORS для всех (для отладки)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,22 +21,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-init_db()
 BASE_DIR = "contest_server"
+TASKS_DIR = "tasks"
+SUBMISSIONS_DIR = "submissions"
 
 @app.on_event("startup")
 async def startup_event():
+    print("[STARTUP] Инициализация...")
+
+    # Инициализация БД
+    init_db()
+
+    # Очистка и создание папок
+    os.makedirs(TASKS_DIR, exist_ok=True)
+    os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
+    for file in glob.glob(f"{TASKS_DIR}/*.json"):
+        os.remove(file)
+    for file in glob.glob(f"{SUBMISSIONS_DIR}/*.json"):
+        os.remove(file)
+    print("[CLEANUP] tasks/ и submissions/ очищены")
+
+    # Запуск планировщика
     start_scheduler()
+
+    print("[STARTUP] Сервер готов.")
 
 @app.websocket("/ws/{team}")
 async def websocket_endpoint(websocket: WebSocket, team: str):
     await ws_manager.connect(team, websocket)
     try:
         while True:
-            await websocket.receive_text()  # можно просто ожидать сообщений
+            await websocket.receive_text()
     except:
         ws_manager.disconnect(team)
-
 
 @app.post("/register")
 def register(name: str = Form(...)):
@@ -49,7 +66,7 @@ def register(name: str = Form(...)):
 
 @app.get("/task")
 async def get_task(team: str = Depends(verify_token)):
-    task_path = os.path.join(BASE_DIR, "tasks")
+    task_path = TASKS_DIR
     files = sorted(f for f in os.listdir(task_path) if f.endswith(".json"))
     if not files:
         return {"error": "Нет доступных заданий"}
@@ -61,10 +78,9 @@ async def get_task(team: str = Depends(verify_token)):
 @app.post("/submit")
 async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)):
     db = SessionLocal()
-    sub_path = os.path.join(BASE_DIR, "submissions")
-    os.makedirs(sub_path, exist_ok=True)
+    os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
     filename = f"{team}_{datetime.utcnow().isoformat()}.json"
-    path = os.path.join(sub_path, filename)
+    path = os.path.join(SUBMISSIONS_DIR, filename)
     async with aiofiles.open(path, "wb") as out:
         content = await file.read()
         await out.write(content)
