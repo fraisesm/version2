@@ -59,7 +59,7 @@ async def websocket_endpoint(websocket: WebSocket, team: str):
 def register(name: str = Form(...)):
     db = SessionLocal()
     token = create_token(name)
-    team = Team(name=name, token=token)
+    team = Team(name=name, token=token) # type: ignore
     db.add(team)
     db.commit()
     return {"token": token}
@@ -83,8 +83,8 @@ async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)
     path = os.path.join(SUBMISSIONS_DIR, filename)
     async with aiofiles.open(path, "wb") as out:
         content = await file.read()
-        await out.write(content)
-    sub = Submission(team_name=team, task_file="unknown", submission_file=filename, received_at=datetime.utcnow())
+        await out.write(content) # type: ignore
+    sub = Submission(team_name=team, task_file="unknown", submission_file=filename, received_at=datetime.utcnow()) # type: ignore
     db.add(sub)
     db.commit()
     return {"status": "received"}
