@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Navbar, Nav, Button, Modal, Form } from 'react-bootstrap';
+import { Navbar, Nav, Button, Modal, Form, Image } from 'react-bootstrap';
+import logo from './rinh.png'; 
 
 export default function NaviBar() {
   const [showModal, setShowModal] = useState(false);
@@ -48,14 +49,26 @@ export default function NaviBar() {
 
   return (
     <>
-      <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
-        <Navbar.Brand>Сервис для проведения конкурсов по ИИ</Navbar.Brand>
+      <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark"
+        style={{ paddingTop: '0.1rem', paddingBottom: '0.1rem' }}>
+          <div className="position-absolute start-50 translate-middle-x">
+        <Navbar.Brand>Сервис проведения конкурса по искусственному интеллекту</Navbar.Brand>
+      </div>
+         <div className="d-flex align-items-center ms-3">
+    <Image 
+      src={logo} 
+      alt="Логотип РИНХА" 
+      height="70" 
+      className="d-inline-block align-top"
+    />
+    <Navbar.Brand className="ms-4">Невдуплёныши</Navbar.Brand>
+  </div>
         <Navbar.Toggle aria-controls="responsive-navbar-nav"/>
         <Navbar.Collapse id="responsive-navbar-nav">
           <Nav className="ms-auto">
             <Button 
               variant="primary" 
-              className="me-2"
+              className="me-4"
               onClick={handleShow}
             >
               Участвовать в конкурсе
