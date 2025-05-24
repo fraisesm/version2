@@ -6,6 +6,10 @@ from models import Team, Submission
 from datetime import datetime
 import aiofiles
 import os
+from scheduler import start_scheduler
+from websocket import ws_manager
+from fastapi import WebSocket
+
 
 app = FastAPI()
 
@@ -19,6 +23,20 @@ app.add_middleware(
 
 init_db()
 BASE_DIR = "contest_server"
+
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler()
+
+@app.websocket("/ws/{team}")
+async def websocket_endpoint(websocket: WebSocket, team: str):
+    await ws_manager.connect(team, websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # можно просто ожидать сообщений
+    except:
+        ws_manager.disconnect(team)
+
 
 @app.post("/register")
 def register(name: str = Form(...)):
