@@ -1,11 +1,20 @@
+import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import time
+from dotenv import load_dotenv
 
-SECRET_KEY = "supersecretkey"
-ALGORITHM = "HS256"
+# Load environment variables
+load_dotenv()
+
+# Get secrets from environment variables
+SECRET_KEY = os.getenv("SECRET_KEY", "")  # Will be empty if not set
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 security = HTTPBearer()
+
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is not set. Please set it in .env file")
 
 def create_token(name: str):
     payload = {
