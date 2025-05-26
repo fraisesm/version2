@@ -9,6 +9,8 @@ import os
 import glob
 from scheduler import start_scheduler
 from websocket import ws_manager
+import json
+import logging
 
 app = FastAPI()
 
@@ -24,6 +26,8 @@ app.add_middleware(
 BASE_DIR = "contest_server"
 TASKS_DIR = "tasks"
 SUBMISSIONS_DIR = "submissions"
+
+logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_event():
@@ -79,12 +83,51 @@ async def get_task(team: str = Depends(verify_token)):
 async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)):
     db = SessionLocal()
     os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
-    filename = f"{team}_{datetime.utcnow().isoformat()}.json"
+    
+    # Получаем время начала обработки
+    submission_time = datetime.utcnow()
+    
+    filename = f"{team}_{submission_time.isoformat()}.json"
     path = os.path.join(SUBMISSIONS_DIR, filename)
-    async with aiofiles.open(path, "wb") as out:
-        content = await file.read()
-        await out.write(content) # type: ignore
-    sub = Submission(team_name=team, task_file="unknown", submission_file=filename, received_at=datetime.utcnow()) # type: ignore
-    db.add(sub)
-    db.commit()
-    return {"status": "received"}
+    
+    try:
+        async with aiofiles.open(path, "wb") as out:
+            content = await file.read()
+            await out.write(content)
+        
+        # Проверяем валидность JSON и наличие необходимых полей
+        try:
+            solution = json.loads(content)
+            if "selections" not in solution:
+                raise ValueError("Missing 'selections' field")
+            
+            status = "SUCCESS"
+        except json.JSONDecodeError:
+            status = "INVALID_JSON"
+        except ValueError as e:
+            status = "INVALID_FORMAT"
+        except Exception as e:
+            status = "ERROR"
+            
+        # Вычисляем время обработки
+        processing_time = int((datetime.utcnow() - submission_time).total_seconds() * 1000)
+        
+        sub = Submission(
+            team_name=team,
+            task_file="unknown",  # TODO: добавить связь с текущей задачей
+            submission_file=filename,
+            received_at=submission_time,
+            submitted_at=datetime.utcnow(),
+            processing_time=processing_time,
+            status=status
+        )
+        db.add(sub)
+        db.commit()
+        
+        return {"status": status, "processing_time": processing_time}
+        
+    except Exception as e:
+        logger.error(f"Error processing submission: {str(e)}")
+        return {"status": "ERROR", "message": str(e)}
+    finally:
+        db.close()
