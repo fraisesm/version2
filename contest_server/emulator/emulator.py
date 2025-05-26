@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ParticipantEmulator:
-    def __init__(self, server_url="http://localhost:8000", ws_url="ws://localhost:8000"):
+    def __init__(self, server_url="http://127.0.0.1:8000", ws_url="ws://127.0.0.1:8000"):
         self.server_url = server_url
         self.ws_url = ws_url
         self.token = None
@@ -28,6 +28,7 @@ class ParticipantEmulator:
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
                 data.add_field('name', self.team_name)
+                logger.info(f"Attempting to register team {self.team_name}")
                 async with session.post(f"{self.server_url}/register", data=data) as response:
                     if response.status == 200:
                         result = await response.json()
@@ -35,10 +36,11 @@ class ParticipantEmulator:
                         logger.info(f"Успешная регистрация команды {self.team_name}")
                         return True
                     else:
-                        logger.error(f"Ошибка регистрации: {response.status}")
+                        error_text = await response.text()
+                        logger.error(f"Ошибка регистрации: статус {response.status}, ответ: {error_text}")
                         return False
         except Exception as e:
-            logger.error(f"Ошибка при регистрации: {e}")
+            logger.error(f"Ошибка при регистрации: {str(e)}")
             return False
 
     async def get_task(self):
@@ -222,11 +224,21 @@ class ParticipantEmulator:
         logger.info("Эмулятор остановлен")
 
 async def main():
-    emulator = ParticipantEmulator()
+    # Создаем несколько эмуляторов
+    num_teams = 10  # Количество команд
+    emulators = []
+    
+    for i in range(num_teams):
+        emulator = ParticipantEmulator()
+        emulators.append(emulator)
+    
     try:
-        await emulator.main_loop()
+        # Запускаем все эмуляторы одновременно
+        tasks = [emulator.main_loop() for emulator in emulators]
+        await asyncio.gather(*tasks)
     except KeyboardInterrupt:
-        emulator.stop()
+        for emulator in emulators:
+            emulator.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -11,6 +11,14 @@ from scheduler import start_scheduler
 from websocket import ws_manager
 import json
 import logging
+from fastapi import HTTPException
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -26,8 +34,6 @@ app.add_middleware(
 BASE_DIR = "contest_server"
 TASKS_DIR = "tasks"
 SUBMISSIONS_DIR = "submissions"
-
-logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_event():
@@ -53,20 +59,51 @@ async def startup_event():
 @app.websocket("/ws/{team}")
 async def websocket_endpoint(websocket: WebSocket, team: str):
     await ws_manager.connect(team, websocket)
+    # Отправляем статус подключения всем клиентам
+    status_message = json.dumps({
+        "type": "TEAM_STATUS",
+        "status": {
+            "team": team,
+            "connected": True
+        }
+    })
+    await ws_manager.broadcast(status_message)
     try:
         while True:
             await websocket.receive_text()
     except:
         ws_manager.disconnect(team)
+        # Отправляем статус отключения всем клиентам
+        status_message = json.dumps({
+            "type": "TEAM_STATUS",
+            "status": {
+                "team": team,
+                "connected": False
+            }
+        })
+        await ws_manager.broadcast(status_message)
 
 @app.post("/register")
 def register(name: str = Form(...)):
+    logger.info(f"Получен запрос на регистрацию команды: {name}")
     db = SessionLocal()
-    token = create_token(name)
-    team = Team(name=name, token=token) # type: ignore
-    db.add(team)
-    db.commit()
-    return {"token": token}
+    try:
+        logger.info("Создание JWT токена...")
+        token = create_token(name)
+        logger.info("Создание записи команды в БД...")
+        team = Team(name=name, token=token)
+        db.add(team)
+        logger.info("Сохранение в БД...")
+        db.commit()
+        logger.info(f"Команда {name} успешно зарегистрирована")
+        return {"token": token}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Registration error: {str(e)}")
+        logger.exception("Полный стек ошибки:")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 @app.get("/task")
 async def get_task(team: str = Depends(verify_token)):
@@ -123,6 +160,17 @@ async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)
         )
         db.add(sub)
         db.commit()
+
+        # Отправляем статус решения всем клиентам
+        status_message = json.dumps({
+            "type": "SUBMISSION_STATUS",
+            "status": {
+                "team": team,
+                "taskId": len(os.listdir(TASKS_DIR)) - 1,  # Индекс текущей задачи
+                "status": "accepted" if status == "SUCCESS" else "submitted"
+            }
+        })
+        await ws_manager.broadcast(status_message)
         
         return {"status": status, "processing_time": processing_time}
         
