@@ -10,11 +10,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ParticipantEmulator:
-    def __init__(self, server_url="http://127.0.0.1:8000", ws_url="ws://127.0.0.1:8000"):
+    def __init__(self, team_name=None, server_url="http://127.0.0.1:8000", ws_url="ws://127.0.0.1:8000"):
+        self.team_name = team_name or f"Команда_{random.randint(1000, 9999)}"
         self.server_url = server_url
         self.ws_url = ws_url
         self.token = None
-        self.team_name = f"team_{random.randint(1000, 9999)}"
         self.ws = None
         self.is_running = False
         self.reconnect_delay = 1  # Starting delay for exponential backoff
@@ -181,6 +181,7 @@ class ParticipantEmulator:
             await self.submit_with_retry(solution)
 
     async def main_loop(self):
+        
         """Основной цикл работы эмулятора"""
         self.is_running = True
         
@@ -227,11 +228,12 @@ async def main():
     # Создаем несколько эмуляторов
     num_teams = 10  # Количество команд
     emulators = []
-    
-    for i in range(num_teams):
-        emulator = ParticipantEmulator()
+
+    team_names = [f"Команда_{i+1}" for i in range(num_teams)]
+    for name in team_names:
+        emulator = ParticipantEmulator(team_name=name)
         emulators.append(emulator)
-    
+
     try:
         # Запускаем все эмуляторы одновременно
         tasks = [emulator.main_loop() for emulator in emulators]
@@ -241,4 +243,5 @@ async def main():
             emulator.stop()
 
 if __name__ == "__main__":
+    
     asyncio.run(main())

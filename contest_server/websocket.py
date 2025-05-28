@@ -43,3 +43,28 @@ class WebSocketManager:
             self.disconnect(team)
 
 ws_manager = WebSocketManager()
+class WebSocketManager:
+    def __init__(self):
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, team: str, websocket: WebSocket):
+        await websocket.accept()
+        if team not in self.active_connections:
+            self.active_connections[team] = []
+        self.active_connections[team].append(websocket)
+
+    def disconnect(self, team: str):
+        if team in self.active_connections:
+            self.active_connections[team] = [ws for ws in self.active_connections[team] if not ws.client_state.name == "DISCONNECTED"]
+            if not self.active_connections[team]:
+                del self.active_connections[team]
+
+    async def broadcast(self, message: str):
+        for team, connections in self.active_connections.items():
+            for connection in connections:
+                try:
+                    await connection.send_text(message)
+                except:
+                    pass
+
+ws_manager = WebSocketManager()

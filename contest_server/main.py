@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Depends, Form, WebSocket
+from fastapi import FastAPI, UploadFile, File, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from auth import create_token, verify_token
 from database import SessionLocal, init_db
@@ -12,6 +12,7 @@ from websocket import ws_manager
 import json
 import logging
 from fastapi import HTTPException
+from fastapi import WebSocket
 
 # Настройка логирования
 logging.basicConfig(
@@ -116,42 +117,50 @@ async def get_task(team: str = Depends(verify_token)):
         content = await f.read()
     return {"filename": latest, "content": content}
 
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    await ws_manager.connect("dashboard", websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except:
+        ws_manager.disconnect("dashboard")
+
+
 @app.post("/submit")
 async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)):
     db = SessionLocal()
     os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
     
-    # Получаем время начала обработки
     submission_time = datetime.utcnow()
-    
     filename = f"{team}_{submission_time.isoformat()}.json"
     path = os.path.join(SUBMISSIONS_DIR, filename)
-    
+
+    task_files = sorted(os.listdir(TASKS_DIR))
+    task_file = task_files[-1] if task_files else "unknown"
+
     try:
         async with aiofiles.open(path, "wb") as out:
             content = await file.read()
             await out.write(content)
-        
-        # Проверяем валидность JSON и наличие необходимых полей
+
         try:
             solution = json.loads(content)
             if "selections" not in solution:
-                raise ValueError("Missing 'selections' field")
-            
+                raise ValueError("Missing 'selections'")
             status = "SUCCESS"
         except json.JSONDecodeError:
             status = "INVALID_JSON"
-        except ValueError as e:
+        except ValueError:
             status = "INVALID_FORMAT"
-        except Exception as e:
+        except:
             status = "ERROR"
-            
-        # Вычисляем время обработки
+
         processing_time = int((datetime.utcnow() - submission_time).total_seconds() * 1000)
-        
+
         sub = Submission(
             team_name=team,
-            task_file="unknown",  # TODO: добавить связь с текущей задачей
+            task_file=task_file,
             submission_file=filename,
             received_at=submission_time,
             submitted_at=datetime.utcnow(),
@@ -161,21 +170,19 @@ async def submit(file: UploadFile = File(...), team: str = Depends(verify_token)
         db.add(sub)
         db.commit()
 
-        # Отправляем статус решения всем клиентам
         status_message = json.dumps({
             "type": "SUBMISSION_STATUS",
             "status": {
                 "team": team,
-                "taskId": len(os.listdir(TASKS_DIR)) - 1,  # Индекс текущей задачи
+                "taskId": task_file.replace("task_", "").replace(".json", ""),
                 "status": "accepted" if status == "SUCCESS" else "submitted"
             }
         })
         await ws_manager.broadcast(status_message)
-        
+
         return {"status": status, "processing_time": processing_time}
-        
+
     except Exception as e:
-        logger.error(f"Error processing submission: {str(e)}")
         return {"status": "ERROR", "message": str(e)}
     finally:
         db.close()
